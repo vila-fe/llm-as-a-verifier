@@ -1,3 +1,11 @@
+> **Nota de este fork — Programa SOFIA Human-AI AVFEARS (24/08/2026):** este repositorio es un
+> fork de [`llm-as-a-verifier/llm-as-a-verifier`](https://github.com/llm-as-a-verifier/llm-as-a-verifier),
+> mantenido como referencia para evaluar el framework como candidato de verificación de agentes
+> (Router Sofia / MacQAS). El fork añade un único commit propio sobre el upstream: corrige un
+> `ZeroDivisionError` en `report()` causado por una ruta de datos de benchmark incorrecta y
+> restaura la compatibilidad con Python 3.9. El resto de este README es la documentación
+> original del proyecto upstream, sin modificar.
+
 <!-- markdownlint-disable MD001 MD041 -->
 <p align="center">
   <picture>
