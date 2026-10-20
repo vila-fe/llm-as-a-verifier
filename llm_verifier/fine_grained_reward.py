@@ -15,6 +15,7 @@ any OpenAI-compatible server with logprobs), the score expectation
 `extract_score`, the pairwise prompt, and a cached batch scorer.
 """
 
+import asyncio
 import base64
 import json
 import math
@@ -22,6 +23,14 @@ import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from llm_verifier.async_adapters import (
+    AsyncVerifierAdapter,
+    DeepSeekAsyncAdapter,
+    GeminiAsyncAdapter,
+    OpenAICompatibleAsyncAdapter,
+)
+from llm_verifier.score_cache import load_score_cache, save_score_cache
 
 DEFAULT_MODEL = "gemini-2.5-flash"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
@@ -174,6 +183,40 @@ def create_client():
     if os.environ.get("DEEPSEEK_API_KEY"):
         return create_deepseek_client()
     return create_gemini_client()
+
+
+def create_async_client():
+    """Build an :class:`AsyncVerifierAdapter` from the verifier environment.
+
+    This is the default transport for new async and batch call paths. The
+    existing ``create_client`` remains available for callers that explicitly
+    provide an OpenAI or google-genai SDK client to a synchronous API.
+    """
+    load_dotenv()
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if base_url:
+        api_key = (os.environ.get("OPENAI_API_KEY")
+                   or os.environ.get("DEEPSEEK_API_KEY", "EMPTY"))
+        if "api.deepseek.com" in base_url:
+            return DeepSeekAsyncAdapter(api_key=api_key, base_url=base_url)
+        return OpenAICompatibleAsyncAdapter(base_url=base_url, api_key=api_key)
+    key = os.environ.get("DEEPSEEK_API_KEY")
+    if key:
+        extra_body, max_tokens = deepseek_reasoning_params()
+        thinking = extra_body.get("thinking", {})
+        effort = extra_body.get("reasoning_effort", "off")
+        if thinking.get("type") == "disabled":
+            effort = "off"
+        return DeepSeekAsyncAdapter(
+            api_key=key, reasoning_effort=effort, max_tokens=max_tokens
+        )
+    vertex_key = os.environ.get("VERTEX_API_KEY")
+    if vertex_key:
+        return GeminiAsyncAdapter(api_key=vertex_key)
+    raise MissingAPIKeyError(
+        "set OPENAI_BASE_URL, DEEPSEEK_API_KEY, or VERTEX_API_KEY in .env "
+        "or the environment"
+    )
 
 
 def default_max_workers():
@@ -585,6 +628,24 @@ def call_verifier(client, prompt, model=DEFAULT_MODEL, top_logprobs=20,
     return call_gemini(client, prompt, model, top_logprobs, images=images)
 
 
+async def call_verifier_async(client, prompt, model=DEFAULT_MODEL,
+                              top_logprobs=20, images=None):
+    """Call an explicit asynchronous adapter and preserve the legacy tuple.
+
+    Async code accepts only :class:`AsyncVerifierAdapter` instances. This
+    keeps the coroutine path fully non-blocking at its HTTP boundary rather
+    than hiding a synchronous SDK call in a worker thread.
+    """
+    if not isinstance(client, AsyncVerifierAdapter):
+        raise TypeError(
+            "call_verifier_async requires an AsyncVerifierAdapter; use "
+            "call_verifier for a legacy OpenAI or google-genai SDK client"
+        )
+    response = await client.complete(prompt, model, top_logprobs, images)
+    USAGE.add(*response.usage)
+    return response.text, response.tokens, response.position_logprobs
+
+
 def call_gemini(client, prompt, model=DEFAULT_MODEL, top_logprobs=20,
                 images=None):
     """Call the verifier model with logprobs.
@@ -763,6 +824,25 @@ def score_pair_criterion(client, problem, trace_a, trace_b, criterion,
     return ra, rb
 
 
+async def score_pair_criterion_async(client, problem, trace_a, trace_b,
+                                     criterion, ground_truth_note,
+                                     model=DEFAULT_MODEL, images=None):
+    """Async counterpart to :func:`score_pair_criterion`.
+
+    The prompt and score extraction are deliberately shared with the
+    synchronous API, so output scores and score-tag parsing are identical.
+    """
+    imgs = as_image_list(images)
+    prompt = build_prompt(
+        problem, trace_a, trace_b, criterion, ground_truth_note,
+        n_images=len(imgs))
+    text, tokens, position_logprobs = await call_verifier_async(
+        client, prompt, model, images=imgs)
+    ra = extract_score(text, tokens, position_logprobs, "<score_A>")
+    rb = extract_score(text, tokens, position_logprobs, "<score_B>")
+    return ra, rb
+
+
 # ---------------------------------------------------------------------------
 # Directed cache key + the per-comparison reward used by the tournament.
 # Comparisons are *directed*: (a, b) and (b, a) are distinct cache entries,
@@ -810,8 +890,9 @@ class LazyClient:
 # ---------------------------------------------------------------------------
 
 def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
-                         ground_truth_note, n_reps, max_workers, cache_file,
-                         model=DEFAULT_MODEL, progress=True, on_error="tie"):
+                                 ground_truth_note, n_reps, max_workers,
+                                 cache_file, model=DEFAULT_MODEL,
+                                 progress=True, on_error="tie"):
     """Score every (criterion, rep) for the requested directed (task, a, b)
     pairs and merge into the cache on disk.
 
@@ -832,8 +913,7 @@ def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
 
     cached = {}
     if cache_file and os.path.exists(cache_file):
-        with open(cache_file) as f:
-            cached = json.load(f)
+        cached = load_score_cache(cache_file)
 
     jobs = []
     for task_name, pairs in needed_pairs.items():
@@ -926,8 +1006,7 @@ def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
                     pbar.update(1)
                     pbar.set_postfix(errors=errors)
                 if cache_file and done % save_every == 0:
-                    with open(cache_file, "w") as f:
-                        json.dump(cached, f)
+                    save_score_cache(cache_file, cached)
 
     run_phase(warm)
     run_phase(rest)
@@ -935,8 +1014,7 @@ def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
         pbar.close()
 
     if cache_file:
-        with open(cache_file, "w") as f:
-            json.dump(cached, f)
+        save_score_cache(cache_file, cached)
 
     log(f"  Done ({errors} errors)")
     log(f"  Tokens: {USAGE - usage_before}")
