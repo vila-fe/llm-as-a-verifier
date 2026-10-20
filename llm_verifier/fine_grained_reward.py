@@ -885,11 +885,29 @@ class LazyClient:
         return self._client
 
 
+class AsyncLazyClient:
+    """Create an async verifier adapter only after the first cache miss."""
+
+    def __init__(self, client=None):
+        if client is not None and not isinstance(client, AsyncVerifierAdapter):
+            raise TypeError("AsyncLazyClient requires an AsyncVerifierAdapter")
+        self._client = client
+
+    async def get(self):
+        if self._client is None:
+            self._client = create_async_client()
+        return self._client
+
+    async def aclose(self):
+        if self._client is not None:
+            await self._client.aclose()
+
+
 # ---------------------------------------------------------------------------
 # Cached batch scoring — only the directed pairs PPT actually needs
 # ---------------------------------------------------------------------------
 
-def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
+def _score_directed_pairs_legacy(lazy_client, tasks, needed_pairs, criteria,
                                  ground_truth_note, n_reps, max_workers,
                                  cache_file, model=DEFAULT_MODEL,
                                  progress=True, on_error="tie"):
@@ -1019,3 +1037,189 @@ def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
     log(f"  Done ({errors} errors)")
     log(f"  Tokens: {USAGE - usage_before}")
     return results
+
+
+async def score_directed_pairs_async(
+        lazy_client, tasks, needed_pairs, criteria, ground_truth_note,
+        n_reps, max_workers, cache_file, model=DEFAULT_MODEL, progress=True,
+        on_error="tie"):
+    """Asynchronously score and atomically cache directed comparison pairs.
+
+    This preserves the legacy scorer's warm-prefix, odd-repeat slot swap,
+    cache, and error-tie semantics. Its HTTP work is coroutine-native:
+    ``asyncio`` tasks plus a semaphore replace the blocking batch executor.
+    """
+    if on_error not in ("tie", "raise"):
+        raise ValueError(f"on_error must be 'tie' or 'raise', got {on_error!r}")
+    if max_workers < 1:
+        raise ValueError("max_workers must be >= 1")
+
+    cached = (load_score_cache(cache_file)
+              if cache_file and os.path.exists(cache_file) else {})
+    jobs = []
+    for task_name, pairs in needed_pairs.items():
+        trials = tasks[task_name]
+        for a, b in pairs:
+            for criterion in criteria:
+                for rep in range(n_reps):
+                    key = cache_key(criterion["id"], task_name, a, b, rep)
+                    if key in cached:
+                        continue
+                    swap = rep % 2 == 1
+                    trace_a, trace_b = trials[a]["trace"], trials[b]["trace"]
+                    if swap:
+                        trace_a, trace_b = trace_b, trace_a
+                    slot_a, slot_b = (b, a) if swap else (a, b)
+                    jobs.append((
+                        key, trials[a]["problem"], trace_a, trace_b, criterion,
+                        trials[a].get("images"), swap, (task_name, slot_a, slot_b),
+                    ))
+
+    log = print if progress else (lambda *args, **kwargs: None)
+    if not jobs:
+        log(f"  All scores cached ({len(cached)} entries)")
+        return cached
+
+    seen_prefixes = set()
+    warm_jobs, remaining_jobs = [], []
+    for job in jobs:
+        if job[7] in seen_prefixes:
+            remaining_jobs.append(job)
+        else:
+            seen_prefixes.add(job[7])
+            warm_jobs.append(job)
+    log(f"  {len(jobs)} scoring jobs ({len(cached)} cached); "
+        f"warming {len(warm_jobs)} prefixes")
+
+    if isinstance(lazy_client, AsyncVerifierAdapter):
+        client = lazy_client
+    else:
+        client = await lazy_client.get()
+    if not isinstance(client, AsyncVerifierAdapter):
+        raise TypeError(
+            "score_directed_pairs_async requires an AsyncLazyClient or "
+            "AsyncVerifierAdapter"
+        )
+
+    usage_before = USAGE.copy()
+    results = dict(cached)
+    errors = 0
+    done = 0
+    save_every = max(1, len(jobs) // 20)
+    semaphore = asyncio.Semaphore(max_workers)
+
+    pbar = None
+    if progress:
+        try:
+            from tqdm import tqdm
+            pbar = tqdm(total=len(jobs), desc="Scoring")
+        except ImportError:
+            pbar = None
+
+    async def run_one(job):
+        key, problem, trace_a, trace_b, criterion, images, swap, _ = job
+        try:
+            async with semaphore:
+                pair_score = await score_pair_criterion_async(
+                    client, problem, trace_a, trace_b, criterion,
+                    ground_truth_note, model, images)
+            return key, swap, pair_score, None
+        except Exception as error:
+            return key, swap, None, error
+
+    async def run_phase(phase_jobs):
+        nonlocal errors, done
+        pending = [asyncio.create_task(run_one(job)) for job in phase_jobs]
+        try:
+            for completed in asyncio.as_completed(pending):
+                key, swap, pair_score, error = await completed
+                if error is not None:
+                    if on_error == "raise":
+                        for task in pending:
+                            task.cancel()
+                        await asyncio.gather(*pending, return_exceptions=True)
+                        raise error
+                    errors += 1
+                    results[key] = {"score_A": 0.5, "score_B": 0.5}
+                    if errors <= 3:
+                        log(f"\n  Error: {error}")
+                else:
+                    score_a, score_b = pair_score
+                    if swap:
+                        score_a, score_b = score_b, score_a
+                    entry = {"score_A": score_a, "score_B": score_b}
+                    cached[key] = entry
+                    results[key] = entry
+                done += 1
+                if pbar is not None:
+                    pbar.update(1)
+                    pbar.set_postfix(errors=errors)
+                if cache_file and done % save_every == 0:
+                    save_score_cache(cache_file, cached)
+        finally:
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    try:
+        await run_phase(warm_jobs)
+        await run_phase(remaining_jobs)
+    finally:
+        if pbar is not None:
+            pbar.close()
+
+    if cache_file:
+        save_score_cache(cache_file, cached)
+    log(f"  Done ({errors} errors)")
+    log(f"  Tokens: {USAGE - usage_before}")
+    return results
+
+
+def _run_async_compat(coroutine):
+    """Run a blocking wrapper only when no event loop is active."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
+    coroutine.close()
+    raise RuntimeError(
+        "the synchronous verifier API cannot run inside an active event loop; "
+        "use score_directed_pairs_async instead"
+    )
+
+
+async def _score_with_fresh_async_client(*args, **kwargs):
+    lazy_client = AsyncLazyClient()
+    try:
+        return await score_directed_pairs_async(lazy_client, *args, **kwargs)
+    finally:
+        await lazy_client.aclose()
+
+
+def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
+                         ground_truth_note, n_reps, max_workers, cache_file,
+                         model=DEFAULT_MODEL, progress=True, on_error="tie"):
+    """Blocking compatibility wrapper around the async adapter batch core.
+
+    Defaults use the HTTPX adapter core. An explicitly populated ``LazyClient``
+    holding a legacy OpenAI/google-genai SDK client takes the preserved legacy
+    scorer, keeping existing SDK injection functional.
+    """
+    options = {"model": model, "progress": progress, "on_error": on_error}
+    if isinstance(lazy_client, (AsyncLazyClient, AsyncVerifierAdapter)):
+        return _run_async_compat(score_directed_pairs_async(
+            lazy_client, tasks, needed_pairs, criteria, ground_truth_note,
+            n_reps, max_workers, cache_file, **options))
+    existing_client = getattr(lazy_client, "_client", None)
+    if isinstance(existing_client, AsyncVerifierAdapter):
+        return _run_async_compat(score_directed_pairs_async(
+            existing_client, tasks, needed_pairs, criteria, ground_truth_note,
+            n_reps, max_workers, cache_file, **options))
+    if existing_client is None:
+        return _run_async_compat(_score_with_fresh_async_client(
+            tasks, needed_pairs, criteria, ground_truth_note, n_reps,
+            max_workers, cache_file, **options))
+    return _score_directed_pairs_legacy(
+        lazy_client, tasks, needed_pairs, criteria, ground_truth_note, n_reps,
+        max_workers, cache_file, **options)

@@ -9,9 +9,11 @@ own event loop without thread-pool dispatch.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import asyncio
 import base64
 from dataclasses import dataclass
 import os
+from pathlib import Path
 from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import httpx
@@ -185,8 +187,7 @@ class _HttpxAdapter(AsyncVerifierAdapter):
                 response.raise_for_status()
                 data = response.content
             else:
-                with open(path, "rb") as handle:
-                    data = handle.read()
+                data = await asyncio.to_thread(Path(path).read_bytes)
         else:
             raise TypeError(
                 f"unsupported image type {type(image).__name__}: expected a "
