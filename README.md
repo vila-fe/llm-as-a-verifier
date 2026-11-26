@@ -550,6 +550,13 @@ python scripts/run_hfe_floor.py --seed 1 --runs 8
 python scripts/run_hfe_floor.py --profile '{"visual_word_extraction": 0.95}'
 ```
 
+Ingesta del dataset real (guía desmenuzada en `docs/INGESTA_HFE_PUBLIC.md`):
+
+```bash
+# tras descargar el zip de https://www.kaggle.com/datasets/deepmind/hfe-public
+python scripts/ingest_hfe_public.py data/hfe_floor_trajs/kaggle_raw/hfe-public.zip --run
+```
+
 Con la suite semilla el veredicto canónico es FAIL (family-pass 0.0): es el
 comportamiento esperado — la métrica familiar es deliberadamente estricta y un
 perfil con tasas de fallo del 8–20% por ejecución no puede sostener una
