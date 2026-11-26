@@ -1,3 +1,9 @@
+> Nota de este fork actualizada (26/11/2026): además del fix previo, el fork incorpora el módulo
+> **Suelo HFE** (integración AVFrere-b/c, Solicitud #2) — suite de fiabilidad de suelo basada en la
+> metodología de Humanity's First Exam de Google DeepMind, con simulación HOOTL, métricas pass@1 y
+> family-pass (cota inferior de Wilson) y registro de política JSONL. Ver la sección "Suelo HFE"
+> al final de este README.
+
 > **Nota de este fork — Programa SOFIA Human-AI AVFEARS (24/08/2026):** este repositorio es un
 > fork de [`llm-as-a-verifier/llm-as-a-verifier`](https://github.com/llm-as-a-verifier/llm-as-a-verifier),
 > mantenido como referencia para evaluar el framework como candidato de verificación de agentes
@@ -508,3 +514,44 @@ If you find this work useful, please cite:
       url={https://arxiv.org/abs/2607.05391}, 
 }
 ```
+
+---
+
+## Suelo HFE — HFE Floor-Reliability Suite (fork SOFIA)
+
+Módulo **Suelo HFE** (integración AVFrere-b/c · MacQAS Atómico · llm-as-a-verifier):
+evalúa la **fiabilidad de suelo** de un modelo — si responde preguntas elementales
+correctamente *cada vez* y ante variantes de reformulación — siguiendo la
+metodología del benchmark *Humanity's First Exam* de Google DeepMind
+(544 prompts, familias de 4 variantes, métrica estricta family pass).
+
+Componentes añadidos:
+
+- `llm_verifier/hfe_floor.py` — carga de suites JSONL, chequeo binario contra
+  respuesta de referencia, métricas pass@1 / family-pass con cota inferior de
+  Wilson (95%), simulación HOOTL determinista por perfil de fiabilidad por
+  capacidad, y loader `hfe` para el pipeline del verificador.
+- `data/hfe_floor_trajs/hfe_floor_seed.jsonl` — suite semilla (el ejemplo
+  público de HFE del blog de Google, CC BY 4.0, + familia sintética en
+  español). La ingesta real de los 112 prompts públicos de HFE (Kaggle) es un
+  paso posterior asistido; el formato JSONL es directamente compatible.
+- `criteria/hfe_floor.md` — criterios de verificación: coincidencia exacta de
+  respuesta, cumplimiento de formato y robustez ante reformulación.
+- `scripts/run_hfe_floor.py` — ejecución HOOTL completa: umbral canónico sobre
+  la cota inferior del family-pass y anexo al registro de política.
+- `data/progress_tracking/hfe_floor_log.jsonl` — registro de política (cada
+  ejecución anota modo, perfil simulado, métricas, umbral y veredicto).
+
+Uso (sin API keys, sin hardware — HOOTL):
+
+```bash
+python scripts/run_hfe_floor.py                       # seed 0, 4 runs/prompt, umbral 0.85
+python scripts/run_hfe_floor.py --seed 1 --runs 8
+python scripts/run_hfe_floor.py --profile '{"visual_word_extraction": 0.95}'
+```
+
+Con la suite semilla el veredicto canónico es FAIL (family-pass 0.0): es el
+comportamiento esperado — la métrica familiar es deliberadamente estricta y un
+perfil con tasas de fallo del 8–20% por ejecución no puede sostener una
+familia de 16 runs. Esto confirma la lógica de umbral de suelo del
+Reglamento Canónico antes de promocionar cualquier modelo entre entornos.

@@ -314,8 +314,11 @@ def load_med(data, root):
     return tasks, len(run_names)
 
 
+from llm_verifier.hfe_floor import load_hfe
+
 LOADERS = {
     "terminal": load_terminal,
     "swe": load_swe,
     "med": load_med,
+    "hfe": load_hfe,
 }

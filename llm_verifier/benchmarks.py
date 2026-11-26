@@ -58,6 +58,15 @@ BENCHMARKS = {
         # runs: defaults to every run directory found under trajs_dir
         data={"trajs_dir": "data/swebench_verified_trajs"},
     ),
+    "hfe_floor": Benchmark(
+        name="HFE FLOOR  (Suelo HFE / MacQAS Atómico, HOOTL sim)",
+        loader="hfe",
+        prompts="hfe_floor",
+        criteria=["answer_match", "format_compliance", "rephrase_robustness"],
+        cache="cache/cache_hfe_floor.json",
+        results="results/hfe_floor.txt",
+        data={"suite": "data/hfe_floor_trajs/hfe_floor_seed.jsonl"},
+    ),
     "medagentbench": Benchmark(
         name="MEDAGENTBENCH  (Opus 4.8 max-effort, x5)",
         loader="med",
