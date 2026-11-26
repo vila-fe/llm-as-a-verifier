@@ -1,0 +1,205 @@
+{
+  "benchmark": {
+    "family_size": 4,
+    "macro_categories": {
+      "math_algorithmic": {
+        "families": 40,
+        "prompts": 160
+      },
+      "reasoning_language": {
+        "families": 18,
+        "prompts": 72
+      },
+      "spatial_positional": {
+        "families": 27,
+        "prompts": 108
+      },
+      "vision": {
+        "families": 51,
+        "prompts": 204
+      }
+    },
+    "multimodal_families": 79,
+    "multimodal_prompts": 316,
+    "primary_floor_metric": "family pass4 (4x4)",
+    "private_holdout": {
+      "families": 108,
+      "prompts": 432
+    },
+    "public_split": {
+      "families": 28,
+      "kaggle": "deepmind/hfe-public",
+      "license": "CC BY 4.0",
+      "prompts": 112
+    },
+    "rollouts_per_prompt": 6,
+    "subcategories": 20,
+    "text_only_families": 57,
+    "text_only_prompts": 228,
+    "total_families": 136,
+    "total_prompts": 544
+  },
+  "categories": [
+    {
+      "description": "Manipulating symbols strictly by rule, ignoring semantic meaning.",
+      "families": 8,
+      "id": "algorithmic_and_symbolic_execution",
+      "input_modality": "text",
+      "macro_category": "math_algorithmic",
+      "prompts": 32
+    },
+    {
+      "description": "Understanding cause-and-effect and hypotheticals.",
+      "families": 2,
+      "id": "causal_and_counterfactual_reasoning",
+      "input_modality": "text_text_image",
+      "macro_category": "reasoning_language",
+      "prompts": 8
+    },
+    {
+      "description": "Basic physics, gravity, and object permanence.",
+      "families": 4,
+      "id": "commonsense_and_physical_reasoning",
+      "input_modality": "text_text_image",
+      "macro_category": "reasoning_language",
+      "prompts": 16
+    },
+    {
+      "description": "Following strict negative or formatting instructions that require suppressing the model's natural output.",
+      "families": 13,
+      "id": "constraint_satisfaction",
+      "input_modality": "text",
+      "macro_category": "math_algorithmic",
+      "prompts": 52
+    },
+    {
+      "description": "Basic integer math, money, and simple addition.",
+      "families": 3,
+      "id": "general_arithmetic_and_calculation",
+      "input_modality": "text",
+      "macro_category": "math_algorithmic",
+      "prompts": 12
+    },
+    {
+      "description": "Identifying a rule from small examples and applying it to a new instance.",
+      "families": 4,
+      "id": "generalization_and_pattern_recognition",
+      "input_modality": "text_text_image",
+      "macro_category": "reasoning_language",
+      "prompts": 16
+    },
+    {
+      "description": "Multi-step transitive logic.",
+      "families": 2,
+      "id": "logical_deduction",
+      "input_modality": "text",
+      "macro_category": "reasoning_language",
+      "prompts": 8
+    },
+    {
+      "description": "Understanding math concepts beyond simple calculation (magnitude, comparison, units).",
+      "families": 5,
+      "id": "mathematical_and_quantitative_reasoning",
+      "input_modality": "text_text_image",
+      "macro_category": "math_algorithmic",
+      "prompts": 20
+    },
+    {
+      "description": "Keeping track of object state/location through a sequence of moves.",
+      "families": 6,
+      "id": "positional_tracking",
+      "input_modality": "text_text_image",
+      "macro_category": "spatial_positional",
+      "prompts": 24
+    },
+    {
+      "description": "Reordering, reversing, or editing strings.",
+      "families": 6,
+      "id": "sequence_manipulation",
+      "input_modality": "text",
+      "macro_category": "math_algorithmic",
+      "prompts": 24
+    },
+    {
+      "description": "Organizing lists by criteria (alphabetical, size).",
+      "families": 5,
+      "id": "sorting_and_ordering",
+      "input_modality": "text_text_image",
+      "macro_category": "math_algorithmic",
+      "prompts": 20
+    },
+    {
+      "description": "Understanding geometry, shapes, and how objects fit together.",
+      "families": 4,
+      "id": "spatial_and_topological_reasoning",
+      "input_modality": "text_text_image",
+      "macro_category": "spatial_positional",
+      "prompts": 16
+    },
+    {
+      "description": "Correctly identifying when something did not happen or does not exist.",
+      "families": 3,
+      "id": "negative_fact_verification",
+      "input_modality": "text_text_image",
+      "macro_category": "reasoning_language",
+      "prompts": 12
+    },
+    {
+      "description": "Grasping implied meaning, obvious sarcasm, or the practical intent behind a statement rather than taking it literally.",
+      "families": 3,
+      "id": "pragmatic_reasoning",
+      "input_modality": "text",
+      "macro_category": "reasoning_language",
+      "prompts": 12
+    },
+    {
+      "description": "Correctly identifying specific colors/shades in an image, resisting lighting artifacts or common priors.",
+      "families": 10,
+      "id": "color_identification",
+      "input_modality": "text_image",
+      "macro_category": "vision",
+      "prompts": 40
+    },
+    {
+      "description": "Accurately counting distinct objects.",
+      "families": 12,
+      "id": "object_counting",
+      "input_modality": "text_image",
+      "macro_category": "vision",
+      "prompts": 48
+    },
+    {
+      "description": "Reading text (OCR) in images, especially handwriting or distorted text.",
+      "families": 11,
+      "id": "text_and_symbol_recognition",
+      "input_modality": "text_image",
+      "macro_category": "vision",
+      "prompts": 44
+    },
+    {
+      "description": "Interpreting the meaning or direction of superimposed graphical elements (drawn arrows, circles) or physical pointing.",
+      "families": 11,
+      "id": "arrows_pointers_or_indicators",
+      "input_modality": "text_image",
+      "macro_category": "vision",
+      "prompts": 44
+    },
+    {
+      "description": "Reading basic visual data points, legends, or obvious visual trends from simple charts.",
+      "families": 7,
+      "id": "graph_and_chart_understanding",
+      "input_modality": "text_image",
+      "macro_category": "vision",
+      "prompts": 28
+    },
+    {
+      "description": "Understanding 3D physical relationships, occlusion, or relative positioning of objects depicted in a 2D image or described scene (e.g., inside/outside, in front of/behind, stacking).",
+      "families": 17,
+      "id": "spatial_reasoning",
+      "input_modality": "text_text_image",
+      "macro_category": "spatial_positional",
+      "prompts": 68
+    }
+  ],
+  "source": "Humanity's First Exam: Measuring the Reliability Floor of LLMs (Google DeepMind, 2026-11-24), Tabla 1 del informe tecnico; https://storage.googleapis.com/deepmind-media/papers/hfe_tech_paper.pdf"
+}
